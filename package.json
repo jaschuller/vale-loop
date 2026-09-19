@@ -1,0 +1,18 @@
+{
+  "name": "vale-loop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Track A: local headed knock loop for one existing Grok conversation. Not the xAI API.",
+  "scripts": {
+    "start": "node src/loop.js",
+    "once": "node src/loop.js --once",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright": "^1.49.1"
+  }
+}
