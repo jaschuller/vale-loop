@@ -1,3 +1,11 @@
+# Justin's notes on how to use this project:
+
+1) Open a Window's Powershell and cd up to the top level
+2) Paste the following to get a Chrome browser open that the loop.js file can connect to
+'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe' --remote-debugging-port=9222 --user-data-dir="D:\Grok Build\vale-loop\user-data" --new-window "https://grok.com"
+3) npm start or npm run once, or run the loop.js file from debug. See Setup below for full details
+
+
 # vale-loop
 
 Local headed Chrome loop that knocks on **one existing Grok conversation** and saves the reply.
