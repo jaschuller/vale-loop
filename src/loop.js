@@ -15,27 +15,21 @@ const { containsStop, looksLikeLimit } = require("./parse-reply");
 const ROOT = path.resolve(__dirname, "..");
 require("dotenv").config({ path: path.join(ROOT, ".env") });
 
-// Try these in order. Last visible match wins for each selector.
+// Try these in order. Use the actual live Grok editor element.
 const COMPOSER_SELECTORS = [
-  "textarea",
-  '[contenteditable="true"]',
-  '[data-testid="chat-input"]',
-  'div[contenteditable="true"]',
+  'div[role="textbox"][contenteditable="true"].tiptap.ProseMirror',
+  'div[role="textbox"][contenteditable="true"]',
+  '.tiptap.ProseMirror[contenteditable="true"]',
 ];
 
 const SEND_SELECTORS = [
-  'button[aria-label*="Send" i]',
-  'button[data-testid*="send" i]',
-  'button[type="submit"]',
-  'button:has-text("Send")',
+  'button[aria-label="Submit"]',
+  'button[data-testid="chat-submit"]'
 ];
 
 const ASSISTANT_SELECTORS = [
   '[data-testid="assistant-message"]',
-  '[data-message-author-role="assistant"]',
-  '[data-role="assistant"]',
-  '[data-testid="markdown-text"]',
-  "article",
+  '.message-bubble'
 ];
 
 const POLL_MS = 2000;
@@ -65,6 +59,8 @@ const ENABLED = process.env.ENABLED === "1";
 const GROK_CONVO_URL = (process.env.GROK_CONVO_URL || "").trim();
 const INTERVAL_MIN = Math.max(1, Number(process.env.INTERVAL_MIN) || 90);
 const HEADLESS = process.env.HEADLESS === "1";
+const USE_EXISTING_BROWSER = process.env.USE_EXISTING_BROWSER === "1";
+const CHROME_REMOTE_DEBUG_URL = (process.env.CHROME_REMOTE_DEBUG_URL || "").trim();
 const USER_DATA_DIR = envPath("USER_DATA_DIR", "./user-data");
 const KNOCK_FILE = envPath("KNOCK_FILE", "./prompts/knock.md");
 const OUT_DIR = envPath("OUT_DIR", "./out");
@@ -298,9 +294,6 @@ async function knockOnce(page, knock) {
     die("GROK_CONVO_URL is empty. Paste the existing conversation URL into .env.");
   }
 
-  await page.goto(GROK_CONVO_URL, { waitUntil: "domcontentloaded" });
-  log(`opened ${GROK_CONVO_URL}`);
-
   const composer = await findComposer(page);
   const before = await getLastAssistantText(page);
 
@@ -345,20 +338,39 @@ function assertCanRun(isFirst) {
   }
 }
 
+async function openBrowser() {
+  if (USE_EXISTING_BROWSER || CHROME_REMOTE_DEBUG_URL) {
+    const url = CHROME_REMOTE_DEBUG_URL || "http://localhost:9222";
+    log(`attaching to existing Chrome via CDP at ${url}`);
+    const browser = await chromium.connectOverCDP(url);
+    const context = browser.contexts()[0] || (await browser.newContext({ viewport: { width: 1280, height: 900 } }));
+    const page = context.pages()[0] || (await context.newPage());
+
+    return { browser, context, page, shouldCloseBrowser: false };
+  }
+
+  log(`launching fresh persistent browser profile at ${USER_DATA_DIR}`);
+  const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+    headless: HEADLESS,
+    viewport: { width: 1280, height: 900 },
+  });
+  const page = context.pages()[0] || (await context.newPage());
+  return { browser: null, context, page, shouldCloseBrowser: true };
+}
+
 async function main() {
   ensureDirs();
   assertCanRun(true);
   const knock = readKnock();
 
   log(
-    `start once=${once} force=${force} headless=${HEADLESS} interval=${INTERVAL_MIN}m`
+    `start once=${once} force=${force} headless=${HEADLESS} interval=${INTERVAL_MIN}m existingBrowser=${USE_EXISTING_BROWSER || !!CHROME_REMOTE_DEBUG_URL}`
   );
 
-  const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-    headless: HEADLESS,
-    viewport: { width: 1280, height: 900 },
-  });
-  const page = context.pages()[0] || (await context.newPage());
+  const { context, page, browser, shouldCloseBrowser } = await openBrowser();
+
+  console.log("URL:", GROK_CONVO_URL);
+  console.log("title:", await page.title());
 
   try {
     let first = true;
@@ -389,7 +401,12 @@ async function main() {
     });
     throw err;
   } finally {
-    await context.close();
+    if (shouldCloseBrowser) {
+      await context.close();
+    }
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
